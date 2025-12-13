@@ -170,6 +170,13 @@ def config(camera: str, show: bool):
 
 
 @cli.command()
+def platform():
+    """Show detected platform and recommended settings."""
+    from .platform import print_platform_info
+    print_platform_info()
+
+
+@cli.command()
 @click.argument('recording_dir', type=click.Path(exists=True))
 def preview(recording_dir: str):
     """Preview a recording's keyframes."""

@@ -3,9 +3,12 @@ TaskForge Capture Module
 
 Records synchronized video + depth + audio streams.
 Voice narration is the primary interface.
+
+Optimized for memory-constrained devices like NVIDIA Jetson Orin Nano.
 """
 
 import os
+import gc
 import time
 import json
 import threading
@@ -17,6 +20,7 @@ import numpy as np
 import cv2
 
 from .cameras import DepthCamera, Frame, get_camera, CameraType
+from .platform import detect_platform, is_memory_constrained
 
 
 @dataclass
@@ -31,16 +35,32 @@ class CaptureSession:
     duration_seconds: float = 0
     
 
-@dataclass  
+@dataclass
 class CaptureConfig:
     """Configuration for capture behavior"""
-    fps: int = 10                      # Frame capture rate (not camera FPS)
+    fps: int = None                    # Frame capture rate (auto-detected if None)
     save_depth_raw: bool = True        # Save .npy depth arrays
     save_depth_viz: bool = True        # Save colorized depth images
     save_video: bool = True            # Compile to MP4 at end
     keyframe_interval: int = 30        # Force keyframe every N frames
     scene_change_threshold: float = 0.3  # 0-1, sensitivity for scene detection
     audio_device: Optional[str] = None   # None = default mic
+    video_chunk_size: int = None       # Frames per chunk for video compilation (auto if None)
+
+    def __post_init__(self):
+        """Apply platform-specific defaults"""
+        platform_info = detect_platform()
+
+        if self.fps is None:
+            self.fps = platform_info.recommended_capture_fps
+
+        if self.video_chunk_size is None:
+            self.video_chunk_size = platform_info.max_video_frames_in_memory
+
+        # On memory-constrained devices, skip raw depth to save disk I/O
+        if is_memory_constrained() and self.save_depth_raw:
+            # Keep it enabled but user can disable if needed
+            pass
     
 
 class AudioRecorder:
@@ -161,8 +181,13 @@ class TaskCapture:
     
     def start(self) -> CaptureSession:
         """Begin capture session"""
+        platform_info = detect_platform()
+
         print(f"🎬 Starting capture: {self.task_name}")
         print(f"   Output: {self.output_dir}")
+        if platform_info.is_jetson:
+            print(f"   Platform: Jetson {platform_info.jetson_model or ''} ({platform_info.total_memory_gb:.0f}GB RAM)")
+        print(f"   FPS: {self.config.fps}")
         
         # Connect camera
         if not self.camera.connect():
@@ -300,26 +325,52 @@ class TaskCapture:
             json.dump(metadata, f, indent=2)
     
     def _compile_video(self):
-        """Compile frames into MP4"""
+        """
+        Compile frames into MP4.
+
+        Memory-optimized: processes frames in chunks to avoid OOM on
+        constrained devices like Jetson Orin Nano.
+        """
         print("   Compiling video...")
-        
+
         frames_dir = self.output_dir / "frames"
         frame_files = sorted(frames_dir.glob("frame_*.jpg"))
-        
+
         if not frame_files:
             return
-        
+
         # Read first frame to get dimensions
         first = cv2.imread(str(frame_files[0]))
         h, w = first.shape[:2]
-        
+        del first  # Free memory immediately
+
         output_path = self.output_dir / "recording.mp4"
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(str(output_path), fourcc, self.config.fps, (w, h))
-        
-        for frame_file in frame_files:
-            img = cv2.imread(str(frame_file))
-            out.write(img)
-        
+
+        chunk_size = self.config.video_chunk_size
+        total_frames = len(frame_files)
+
+        # Process in chunks to manage memory
+        for chunk_start in range(0, total_frames, chunk_size):
+            chunk_end = min(chunk_start + chunk_size, total_frames)
+            chunk_files = frame_files[chunk_start:chunk_end]
+
+            for frame_file in chunk_files:
+                img = cv2.imread(str(frame_file))
+                if img is not None:
+                    out.write(img)
+                # Explicitly delete to help garbage collector
+                del img
+
+            # Force garbage collection between chunks on memory-constrained devices
+            if is_memory_constrained():
+                gc.collect()
+
+            # Progress indicator for long recordings
+            if total_frames > 100:
+                progress = (chunk_end / total_frames) * 100
+                print(f"   Video progress: {progress:.0f}%", end='\r')
+
         out.release()
-        print(f"   Video saved: {output_path}")
+        print(f"   Video saved: {output_path}          ")  # Extra spaces to clear progress line
