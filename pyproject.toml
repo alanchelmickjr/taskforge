@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taskforge"
+version = "0.1.0"
+description = "Watch me work. Write the manual. Capture tasks with depth cameras, generate playbooks."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Alan Helmick", email = "alan@utilitron.io"}
+]
+keywords = ["robotics", "documentation", "playbook", "depth-camera", "oak-d", "realsense", "whisper"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Documentation",
+]
+
+dependencies = [
+    "click>=8.0",
+    "numpy>=1.20",
+    "opencv-python>=4.5",
+    "anthropic>=0.18",
+]
+
+[project.optional-dependencies]
+oak = [
+    "depthai>=2.20",
+]
+realsense = [
+    "pyrealsense2>=2.50",
+]
+audio = [
+    "sounddevice>=0.4",
+    "soundfile>=0.12",
+    "openai-whisper>=20231117",
+]
+all = [
+    "depthai>=2.20",
+    "pyrealsense2>=2.50",
+    "sounddevice>=0.4",
+    "soundfile>=0.12",
+    "openai-whisper>=20231117",
+]
+dev = [
+    "pytest>=7.0",
+    "black>=23.0",
+    "ruff>=0.1",
+]
+
+[project.scripts]
+taskforge = "taskforge.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/alanchelmickjr/taskforge"
+Repository = "https://github.com/alanchelmickjr/taskforge"
+Issues = "https://github.com/alanchelmickjr/taskforge/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.black]
+line-length = 100
+target-version = ['py39', 'py310', 'py311']
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
