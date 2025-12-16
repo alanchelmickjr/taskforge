@@ -99,7 +99,52 @@ taskforge devices
 
 # Configure default camera
 taskforge config --camera oak-d-pro
+
+# Get a briefing before starting a new task (requires memoRable)
+taskforge briefing "replacing servo motor"
+
+# Search past playbooks by topic
+taskforge recall "gripper assembly"
 ```
+
+## Memory Integration (memoRable)
+
+TaskForge integrates with [memoRable](https://github.com/alanchelmickjr/memoRable) for intelligent playbook storage and retrieval using salient memory.
+
+### Features
+
+- **Automatic storage**: Playbooks are stored with salience scores based on emotional impact, novelty, relevance, and more
+- **Smart retrieval**: Find related playbooks by topic, tools, or parts
+- **Pre-task briefings**: Get relevant context before starting a new task
+- **Energy-aware surfacing**: Context-aware retrieval considers time of day and task complexity
+
+### Setup
+
+```bash
+# Install memory dependencies
+pip install httpx
+
+# Set environment variables (optional - defaults to localhost:3100)
+export MEMORABLE_URL=http://localhost:3100
+export MEMORABLE_USER_ID=your-user-id  # Auto-generated if not set
+
+# Start memoRable service (see memoRable docs)
+docker-compose up -d
+```
+
+### Usage
+
+```bash
+# Before starting a task, get a briefing
+taskforge briefing "wiring the motor controller"
+# Output: Related playbooks, suggested tools, parts commonly used
+
+# Search your playbook history
+taskforge recall "servo calibration"
+# Output: Past playbooks ranked by salience score
+```
+
+Playbooks are automatically stored in memory when processed - no extra steps needed.
 
 ## Output
 

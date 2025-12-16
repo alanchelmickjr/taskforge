@@ -62,6 +62,10 @@ jetson = [
     # depthai and pyrealsense2 must be built from source or use Jetson-specific builds
     # openai-whisper requires Jetson PyTorch - install separately
 ]
+# Memory integration with memoRable salient memory system
+memory = [
+    "httpx>=0.24",
+]
 dev = [
     "pytest>=7.0",
     "black>=23.0",

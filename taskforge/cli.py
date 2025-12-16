@@ -221,6 +221,96 @@ def preview(recording_dir: str):
     cv2.destroyAllWindows()
 
 
+@cli.command()
+@click.argument('task_description')
+def briefing(task_description: str):
+    """Get a briefing before starting a task (searches memory for related playbooks)."""
+    try:
+        from .memory import get_task_briefing, get_memory_client
+
+        client = get_memory_client()
+        if not client.is_available():
+            click.echo("Memory service not available.")
+            click.echo("Set MEMORABLE_URL environment variable or start memoRable service.")
+            return
+
+        brief = get_task_briefing(task_description)
+
+        if not brief:
+            click.echo(f"No related playbooks found for: {task_description}")
+            click.echo("This might be a new type of task!")
+            return
+
+        click.echo("\n" + "=" * 50)
+        click.echo(f"📋 TASK BRIEFING: {task_description}")
+        click.echo("=" * 50)
+
+        click.echo(f"\n{brief['tip']}\n")
+
+        if brief['related_playbooks']:
+            click.echo("Related playbooks:")
+            for pb in brief['related_playbooks']:
+                click.echo(f"  • {pb['title']} (salience: {pb['salience']})")
+                if pb['path']:
+                    click.echo(f"    └─ {pb['path']}")
+
+        if brief['suggested_tools']:
+            click.echo(f"\nTools you might need:")
+            for tool in brief['suggested_tools'][:5]:
+                click.echo(f"  • {tool}")
+
+        if brief['suggested_parts']:
+            click.echo(f"\nParts commonly used:")
+            for part in brief['suggested_parts'][:5]:
+                click.echo(f"  • {part}")
+
+        click.echo()
+
+    except ImportError:
+        click.echo("Memory integration requires: pip install httpx")
+    except Exception as e:
+        click.echo(f"Error getting briefing: {e}", err=True)
+
+
+@cli.command()
+@click.argument('query')
+@click.option('--limit', '-n', default=5, help='Max results to show')
+def recall(query: str, limit: int):
+    """Search for past playbooks by topic or description."""
+    try:
+        from .memory import search_related_playbooks, get_memory_client
+
+        client = get_memory_client()
+        if not client.is_available():
+            click.echo("Memory service not available.")
+            click.echo("Set MEMORABLE_URL environment variable or start memoRable service.")
+            return
+
+        results = search_related_playbooks(query, limit=limit)
+
+        if not results:
+            click.echo(f"No playbooks found matching: {query}")
+            return
+
+        click.echo(f"\nFound {len(results)} playbook(s) matching '{query}':\n")
+
+        for i, result in enumerate(results, 1):
+            pb = result.playbook_data or {}
+            click.echo(f"{i}. {pb.get('title', 'Unknown')} [salience: {result.salience_score}]")
+            if pb.get('summary'):
+                click.echo(f"   {pb['summary'][:80]}...")
+            if result.topics:
+                click.echo(f"   Topics: {', '.join(result.topics[:5])}")
+            if pb.get('playbook_path'):
+                click.echo(f"   Path: {pb['playbook_path']}")
+            click.echo()
+
+    except ImportError:
+        click.echo("Memory integration requires: pip install httpx")
+    except Exception as e:
+        click.echo(f"Error searching: {e}", err=True)
+
+
 def main():
     cli()
 

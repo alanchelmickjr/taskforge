@@ -516,7 +516,7 @@ class TaskProcessor:
     def process(self) -> Playbook:
         """Run full processing pipeline"""
         print(f"🔧 Processing: {self.task_name}")
-        
+
         # 1. Transcribe audio
         audio_path = self.recording_dir / "audio.wav"
         if audio_path.exists():
@@ -524,14 +524,14 @@ class TaskProcessor:
         else:
             print("   ⚠️ No audio found, proceeding without transcript")
             transcript = []
-        
+
         # 2. Select keyframes
         keyframes = self.frame_analyzer.select_keyframes(
             self.metadata['frames'],
             max_frames=20
         )
         print(f"   Selected {len(keyframes)} keyframes")
-        
+
         # 3. Get depth descriptions
         depth_descriptions = []
         for frame in keyframes:
@@ -539,7 +539,7 @@ class TaskProcessor:
             rgb_path = self.recording_dir / "frames" / frame['rgb_file']
             desc = self.frame_analyzer.get_depth_description(depth_path, rgb_path)
             depth_descriptions.append(desc)
-        
+
         # 4. Generate playbook via LLM
         playbook = self.generator.generate(
             task_name=self.task_name,
@@ -548,7 +548,7 @@ class TaskProcessor:
             frames_dir=self.recording_dir / "frames",
             depth_descriptions=depth_descriptions
         )
-        
+
         # 5. Write output
         safe_name = self.task_name.lower().replace(" ", "-")[:50]
         output_dir = self.output_base / safe_name
@@ -557,5 +557,26 @@ class TaskProcessor:
             output_dir,
             assets_dir=self.recording_dir / "frames"
         )
-        
+
+        # 6. Store in salient memory (if available)
+        self._store_in_memory(playbook, output_dir)
+
         return playbook
+
+    def _store_in_memory(self, playbook: Playbook, output_dir: Path):
+        """Store playbook in salient memory system if available"""
+        try:
+            from .memory import store_playbook_memory
+            memory_id = store_playbook_memory(
+                playbook,
+                recording_path=self.recording_dir,
+                playbook_path=output_dir
+            )
+            if memory_id:
+                print(f"   🧠 Stored in memory: {memory_id[:8]}...")
+        except ImportError:
+            # Memory module dependencies not installed
+            pass
+        except Exception as e:
+            # Don't fail processing if memory storage fails
+            print(f"   ⚠️ Could not store in memory: {e}")
