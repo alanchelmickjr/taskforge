@@ -9,15 +9,20 @@ Pipeline:
 3. Correlate speech to frames
 4. Send to LLM for structuring
 5. Output markdown playbook
+
+Optimized for memory-constrained devices like NVIDIA Jetson Orin Nano.
 """
 
 import os
+import gc
 import json
 import base64
 from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 import cv2
+
+from .platform import detect_platform, is_memory_constrained
 
 
 @dataclass
@@ -56,26 +61,62 @@ class Playbook:
 
 class WhisperTranscriber:
     """Transcribe audio using OpenAI Whisper"""
-    
-    def __init__(self, model_size: str = "base"):
+
+    # Model memory requirements (approximate)
+    MODEL_MEMORY_GB = {
+        'tiny': 1.0,
+        'base': 1.5,
+        'small': 2.5,
+        'medium': 5.0,
+        'large': 10.0,
+    }
+
+    def __init__(self, model_size: str = None):
         """
         model_size: tiny, base, small, medium, large
-        Recommend 'base' for speed, 'small' for accuracy
+                   If None, auto-selects based on available memory.
+
+        On Jetson Orin Nano (8GB shared RAM), defaults to 'tiny'.
+        Recommend 'base' for speed on desktop, 'small' for accuracy.
         """
+        if model_size is None:
+            model_size = detect_platform().recommended_whisper_model
         self.model_size = model_size
         self._model = None
-        
+
     def _load_model(self):
         if self._model is None:
             import whisper
+
+            platform_info = detect_platform()
+
+            # Warn if model might not fit in memory
+            required_mem = self.MODEL_MEMORY_GB.get(self.model_size, 2.0)
+            available_mem = platform_info.total_memory_gb
+
+            if platform_info.is_jetson:
+                # Jetson shares RAM with GPU, so be more conservative
+                available_mem *= 0.5  # Assume ~50% available for Whisper
+
+            if required_mem > available_mem:
+                print(f"   ⚠️  Warning: {self.model_size} model needs ~{required_mem:.1f}GB, "
+                      f"but only ~{available_mem:.1f}GB available")
+                print(f"   Consider using a smaller model (tiny, base)")
+
             print(f"Loading Whisper model: {self.model_size}")
-            self._model = whisper.load_model(self.model_size)
+
+            # On Jetson, explicitly use CUDA if available
+            if platform_info.is_jetson and platform_info.cuda_available:
+                self._model = whisper.load_model(self.model_size, device="cuda")
+            else:
+                self._model = whisper.load_model(self.model_size)
+
         return self._model
     
     def transcribe(self, audio_path: Path) -> List[TranscriptSegment]:
         """Transcribe audio file to timestamped segments"""
         model = self._load_model()
-        
+
         print(f"Transcribing: {audio_path}")
         result = model.transcribe(
             str(audio_path),
@@ -83,7 +124,7 @@ class WhisperTranscriber:
             word_timestamps=True,
             verbose=False
         )
-        
+
         segments = []
         for seg in result['segments']:
             segments.append(TranscriptSegment(
@@ -91,9 +132,29 @@ class WhisperTranscriber:
                 end=seg['end'],
                 text=seg['text'].strip()
             ))
-        
+
         print(f"Transcribed {len(segments)} segments")
+
+        # On memory-constrained devices, unload model after use
+        if is_memory_constrained():
+            self.unload()
+
         return segments
+
+    def unload(self):
+        """Unload model to free memory"""
+        if self._model is not None:
+            del self._model
+            self._model = None
+            gc.collect()
+
+            # Try to free CUDA memory if available
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except:
+                pass
 
 
 class FrameAnalyzer:
@@ -204,13 +265,23 @@ class PlaybookGenerator:
             frame_descriptions.append(desc)
         
         # Encode keyframe images for vision
+        # On memory-constrained devices, use smaller images and fewer frames
+        if is_memory_constrained():
+            max_images = 6
+            img_size = (480, 270)
+            jpeg_quality = 70
+        else:
+            max_images = 10
+            img_size = (640, 360)
+            jpeg_quality = 80
+
         images = []
-        for frame in keyframes[:10]:  # Limit to 10 for API
+        for frame in keyframes[:max_images]:
             img_path = frames_dir / frame['rgb_file']
             if img_path.exists():
                 img = cv2.imread(str(img_path))
-                img = cv2.resize(img, (640, 360))  # Reduce size
-                _, buffer = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                img = cv2.resize(img, img_size)
+                _, buffer = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
                 b64 = base64.b64encode(buffer).decode('utf-8')
                 images.append({
                     "type": "image",
@@ -220,6 +291,10 @@ class PlaybookGenerator:
                         "data": b64
                     }
                 })
+                del img, buffer  # Free memory immediately
+
+        if is_memory_constrained():
+            gc.collect()
         
         # Build prompt
         prompt = f"""You are creating a step-by-step playbook from a recorded task demonstration.
@@ -441,7 +516,7 @@ class TaskProcessor:
     def process(self) -> Playbook:
         """Run full processing pipeline"""
         print(f"🔧 Processing: {self.task_name}")
-        
+
         # 1. Transcribe audio
         audio_path = self.recording_dir / "audio.wav"
         if audio_path.exists():
@@ -449,14 +524,14 @@ class TaskProcessor:
         else:
             print("   ⚠️ No audio found, proceeding without transcript")
             transcript = []
-        
+
         # 2. Select keyframes
         keyframes = self.frame_analyzer.select_keyframes(
             self.metadata['frames'],
             max_frames=20
         )
         print(f"   Selected {len(keyframes)} keyframes")
-        
+
         # 3. Get depth descriptions
         depth_descriptions = []
         for frame in keyframes:
@@ -464,7 +539,7 @@ class TaskProcessor:
             rgb_path = self.recording_dir / "frames" / frame['rgb_file']
             desc = self.frame_analyzer.get_depth_description(depth_path, rgb_path)
             depth_descriptions.append(desc)
-        
+
         # 4. Generate playbook via LLM
         playbook = self.generator.generate(
             task_name=self.task_name,
@@ -473,7 +548,7 @@ class TaskProcessor:
             frames_dir=self.recording_dir / "frames",
             depth_descriptions=depth_descriptions
         )
-        
+
         # 5. Write output
         safe_name = self.task_name.lower().replace(" ", "-")[:50]
         output_dir = self.output_base / safe_name
@@ -482,5 +557,26 @@ class TaskProcessor:
             output_dir,
             assets_dir=self.recording_dir / "frames"
         )
-        
+
+        # 6. Store in salient memory (if available)
+        self._store_in_memory(playbook, output_dir)
+
         return playbook
+
+    def _store_in_memory(self, playbook: Playbook, output_dir: Path):
+        """Store playbook in salient memory system if available"""
+        try:
+            from .memory import store_playbook_memory
+            memory_id = store_playbook_memory(
+                playbook,
+                recording_path=self.recording_dir,
+                playbook_path=output_dir
+            )
+            if memory_id:
+                print(f"   🧠 Stored in memory: {memory_id[:8]}...")
+        except ImportError:
+            # Memory module dependencies not installed
+            pass
+        except Exception as e:
+            # Don't fail processing if memory storage fails
+            print(f"   ⚠️ Could not store in memory: {e}")

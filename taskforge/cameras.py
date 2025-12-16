@@ -1,7 +1,8 @@
 """
 TaskForge Camera Abstraction Layer
 
-Unified interface for depth cameras. Swap hardware without changing capture logic.
+Unified interface for depth cameras and webcams.
+Supports sensor-blind mode for mobile/basic devices without depth cameras.
 """
 
 from abc import ABC, abstractmethod
@@ -15,6 +16,7 @@ class CameraType(Enum):
     OAK_D_S2 = "oak-d-s2"
     OAK_D_PRO = "oak-d-pro"
     REALSENSE_D455 = "realsense-d455"
+    WEBCAM = "webcam"  # Sensor-blind mode - any USB webcam
     
 
 @dataclass
@@ -309,36 +311,152 @@ class RealSenseCamera(DepthCamera):
         return {}
 
 
+# === Webcam Implementation (Sensor-Blind Mode) ===
+
+class WebcamCamera(DepthCamera):
+    """
+    Standard USB webcam - no depth sensor required.
+
+    Use this for:
+    - Mobile devices
+    - Laptops without depth cameras
+    - Any basic RGB capture
+
+    Depth data will be empty (zeros), but RGB capture works normally.
+    Playbooks can still be generated from video + audio narration.
+    """
+
+    def __init__(self, device_id: int = 0, resolution: Tuple[int, int] = (1280, 720)):
+        self._device_id = device_id
+        self._resolution = resolution
+        self._cap = None
+
+    @property
+    def camera_type(self) -> CameraType:
+        return CameraType.WEBCAM
+
+    @property
+    def resolution(self) -> Tuple[int, int]:
+        return self._resolution
+
+    def connect(self) -> bool:
+        try:
+            import cv2
+            self._cap = cv2.VideoCapture(self._device_id)
+
+            if not self._cap.isOpened():
+                return False
+
+            # Set resolution
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._resolution[0])
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._resolution[1])
+
+            # Read a test frame
+            ret, _ = self._cap.read()
+            if not ret:
+                self._cap.release()
+                return False
+
+            return True
+
+        except Exception as e:
+            print(f"Webcam connection failed: {e}")
+            return False
+
+    def disconnect(self) -> None:
+        if self._cap:
+            self._cap.release()
+            self._cap = None
+
+    def get_frame(self) -> Optional[Frame]:
+        import time
+        import cv2
+
+        if self._cap is None:
+            return None
+
+        ret, frame = self._cap.read()
+        if not ret:
+            return None
+
+        # Convert BGR to RGB
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w = rgb.shape[:2]
+
+        # Create empty depth arrays (sensor-blind mode)
+        depth = np.zeros((h, w), dtype=np.float32)
+        depth_colorized = np.zeros((h, w, 3), dtype=np.uint8)
+
+        return Frame(
+            timestamp=time.time(),
+            rgb=rgb,
+            depth=depth,
+            depth_colorized=depth_colorized
+        )
+
+    def get_intrinsics(self) -> dict:
+        # Approximate intrinsics for standard webcam
+        w, h = self._resolution
+        # Assume ~60 degree FOV
+        fx = fy = w * 0.9  # Rough estimate
+        cx, cy = w / 2, h / 2
+        return {
+            'fx': fx,
+            'fy': fy,
+            'cx': cx,
+            'cy': cy,
+            'sensor_blind': True,  # Flag indicating no real depth
+        }
+
+
 # === Factory ===
 
-def get_camera(camera_type: CameraType = None) -> DepthCamera:
+def get_camera(camera_type: CameraType = None, fallback_to_webcam: bool = True) -> DepthCamera:
     """
     Auto-detect or create specific camera.
+
+    Args:
+        camera_type: Specific camera type to use, or None for auto-detect
+        fallback_to_webcam: If True, fall back to webcam if no depth camera found
+
     Returns first available if camera_type is None.
+    Falls back to webcam (sensor-blind mode) if no depth camera found and fallback enabled.
     """
+    # Explicit webcam request
+    if camera_type == CameraType.WEBCAM:
+        return WebcamCamera()
+
     if camera_type in [CameraType.OAK_D_S2, CameraType.OAK_D_PRO]:
         return OakDCamera(camera_type)
     elif camera_type == CameraType.REALSENSE_D455:
         return RealSenseCamera(camera_type)
-    
-    # Auto-detect
+
+    # Auto-detect depth cameras first
     cameras = [
         OakDCamera(CameraType.OAK_D_PRO),
         RealSenseCamera(CameraType.REALSENSE_D455),
     ]
-    
+
     for cam in cameras:
         if cam.connect():
             return cam
         cam.disconnect()
-    
-    raise RuntimeError("No supported depth camera found")
+
+    # Fallback to webcam if enabled
+    if fallback_to_webcam:
+        print("   ⚠️  No depth camera found, using webcam (sensor-blind mode)")
+        webcam = WebcamCamera()
+        if webcam.connect():
+            return webcam
+        webcam.disconnect()
+
+    raise RuntimeError("No supported camera found")
 
 
 def list_cameras() -> list:
-    """List available cameras"""
+    """List available cameras including webcams"""
     available = []
-    
+
     # Check OAK-D
     try:
         import depthai as dai
@@ -351,7 +469,7 @@ def list_cameras() -> list:
             })
     except:
         pass
-    
+
     # Check RealSense
     try:
         import pyrealsense2 as rs
@@ -364,5 +482,22 @@ def list_cameras() -> list:
             })
     except:
         pass
-    
+
+    # Check for webcams
+    try:
+        import cv2
+        for i in range(4):  # Check first 4 device indices
+            cap = cv2.VideoCapture(i)
+            if cap.isOpened():
+                # Try to get camera name (platform-dependent)
+                available.append({
+                    'type': 'webcam',
+                    'id': str(i),
+                    'name': f'Webcam {i} (sensor-blind)',
+                    'has_depth': False
+                })
+                cap.release()
+    except:
+        pass
+
     return available

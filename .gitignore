@@ -1,0 +1,36 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# TaskForge outputs (can be large)
+recordings/
+playbooks/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Jetson-specific
+*.nvvp

@@ -24,30 +24,43 @@ def cli():
 
 @cli.command()
 @click.argument('task_name')
-@click.option('--camera', '-c', type=click.Choice(['oak-d-s2', 'oak-d-pro', 'realsense-d455', 'auto']), 
-              default='auto', help='Camera to use')
-@click.option('--fps', default=10, help='Frames per second to capture')
+@click.option('--camera', '-c', type=click.Choice(['oak-d-s2', 'oak-d-pro', 'realsense-d455', 'webcam', 'auto']),
+              default='auto', help='Camera to use (webcam for sensor-blind mode)')
+@click.option('--fps', default=None, type=int, help='Frames per second (auto-detected if not set)')
 @click.option('--output', '-o', type=click.Path(), default='./recordings', help='Output directory')
 @click.option('--no-video', is_flag=True, help='Skip video compilation')
-def capture(task_name: str, camera: str, fps: int, output: str, no_video: bool):
-    """Start a capture session for a task."""
+@click.option('--no-depth', is_flag=True, help='Force sensor-blind mode (webcam only, no depth)')
+def capture(task_name: str, camera: str, fps: int, output: str, no_video: bool, no_depth: bool):
+    """Start a capture session for a task.
+
+    Use --webcam or --no-depth for mobile devices without depth cameras.
+    """
     from .cameras import CameraType
     from .capture import TaskCapture, CaptureConfig
-    
+
     # Map camera choice to type
     camera_map = {
         'oak-d-s2': CameraType.OAK_D_S2,
         'oak-d-pro': CameraType.OAK_D_PRO,
         'realsense-d455': CameraType.REALSENSE_D455,
+        'webcam': CameraType.WEBCAM,
         'auto': None
     }
-    camera_type = camera_map[camera]
-    
+
+    # Force webcam if --no-depth specified
+    if no_depth:
+        camera_type = CameraType.WEBCAM
+    else:
+        camera_type = camera_map[camera]
+
     config = CaptureConfig(
         fps=fps,
-        save_video=not no_video
+        save_video=not no_video,
+        # Disable depth saving in sensor-blind mode
+        save_depth_raw=camera_type != CameraType.WEBCAM,
+        save_depth_viz=camera_type != CameraType.WEBCAM,
     )
-    
+
     capture_session = TaskCapture(
         task_name=task_name,
         output_base=Path(output),
@@ -170,6 +183,13 @@ def config(camera: str, show: bool):
 
 
 @cli.command()
+def platform():
+    """Show detected platform and recommended settings."""
+    from .platform import print_platform_info
+    print_platform_info()
+
+
+@cli.command()
 @click.argument('recording_dir', type=click.Path(exists=True))
 def preview(recording_dir: str):
     """Preview a recording's keyframes."""
@@ -212,6 +232,96 @@ def preview(recording_dir: str):
             break
     
     cv2.destroyAllWindows()
+
+
+@cli.command()
+@click.argument('task_description')
+def briefing(task_description: str):
+    """Get a briefing before starting a task (searches memory for related playbooks)."""
+    try:
+        from .memory import get_task_briefing, get_memory_client
+
+        client = get_memory_client()
+        if not client.is_available():
+            click.echo("Memory service not available.")
+            click.echo("Set MEMORABLE_URL environment variable or start memoRable service.")
+            return
+
+        brief = get_task_briefing(task_description)
+
+        if not brief:
+            click.echo(f"No related playbooks found for: {task_description}")
+            click.echo("This might be a new type of task!")
+            return
+
+        click.echo("\n" + "=" * 50)
+        click.echo(f"📋 TASK BRIEFING: {task_description}")
+        click.echo("=" * 50)
+
+        click.echo(f"\n{brief['tip']}\n")
+
+        if brief['related_playbooks']:
+            click.echo("Related playbooks:")
+            for pb in brief['related_playbooks']:
+                click.echo(f"  • {pb['title']} (salience: {pb['salience']})")
+                if pb['path']:
+                    click.echo(f"    └─ {pb['path']}")
+
+        if brief['suggested_tools']:
+            click.echo(f"\nTools you might need:")
+            for tool in brief['suggested_tools'][:5]:
+                click.echo(f"  • {tool}")
+
+        if brief['suggested_parts']:
+            click.echo(f"\nParts commonly used:")
+            for part in brief['suggested_parts'][:5]:
+                click.echo(f"  • {part}")
+
+        click.echo()
+
+    except ImportError:
+        click.echo("Memory integration requires: pip install httpx")
+    except Exception as e:
+        click.echo(f"Error getting briefing: {e}", err=True)
+
+
+@cli.command()
+@click.argument('query')
+@click.option('--limit', '-n', default=5, help='Max results to show')
+def recall(query: str, limit: int):
+    """Search for past playbooks by topic or description."""
+    try:
+        from .memory import search_related_playbooks, get_memory_client
+
+        client = get_memory_client()
+        if not client.is_available():
+            click.echo("Memory service not available.")
+            click.echo("Set MEMORABLE_URL environment variable or start memoRable service.")
+            return
+
+        results = search_related_playbooks(query, limit=limit)
+
+        if not results:
+            click.echo(f"No playbooks found matching: {query}")
+            return
+
+        click.echo(f"\nFound {len(results)} playbook(s) matching '{query}':\n")
+
+        for i, result in enumerate(results, 1):
+            pb = result.playbook_data or {}
+            click.echo(f"{i}. {pb.get('title', 'Unknown')} [salience: {result.salience_score}]")
+            if pb.get('summary'):
+                click.echo(f"   {pb['summary'][:80]}...")
+            if result.topics:
+                click.echo(f"   Topics: {', '.join(result.topics[:5])}")
+            if pb.get('playbook_path'):
+                click.echo(f"   Path: {pb['playbook_path']}")
+            click.echo()
+
+    except ImportError:
+        click.echo("Memory integration requires: pip install httpx")
+    except Exception as e:
+        click.echo(f"Error searching: {e}", err=True)
 
 
 def main():

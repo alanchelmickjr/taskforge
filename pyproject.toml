@@ -52,6 +52,20 @@ all = [
     "soundfile>=0.12",
     "openai-whisper>=20231117",
 ]
+# Jetson Orin Nano / NX / AGX Orin
+# NOTE: On Jetson, do NOT install opencv-python from PyPI.
+# Use the JetPack-provided OpenCV and PyTorch instead.
+# See README.md for Jetson installation instructions.
+jetson = [
+    "sounddevice>=0.4",
+    "soundfile>=0.12",
+    # depthai and pyrealsense2 must be built from source or use Jetson-specific builds
+    # openai-whisper requires Jetson PyTorch - install separately
+]
+# Memory integration with memoRable salient memory system
+memory = [
+    "httpx>=0.24",
+]
 dev = [
     "pytest>=7.0",
     "black>=23.0",
