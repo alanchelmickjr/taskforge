@@ -24,30 +24,43 @@ def cli():
 
 @cli.command()
 @click.argument('task_name')
-@click.option('--camera', '-c', type=click.Choice(['oak-d-s2', 'oak-d-pro', 'realsense-d455', 'auto']), 
-              default='auto', help='Camera to use')
-@click.option('--fps', default=10, help='Frames per second to capture')
+@click.option('--camera', '-c', type=click.Choice(['oak-d-s2', 'oak-d-pro', 'realsense-d455', 'webcam', 'auto']),
+              default='auto', help='Camera to use (webcam for sensor-blind mode)')
+@click.option('--fps', default=None, type=int, help='Frames per second (auto-detected if not set)')
 @click.option('--output', '-o', type=click.Path(), default='./recordings', help='Output directory')
 @click.option('--no-video', is_flag=True, help='Skip video compilation')
-def capture(task_name: str, camera: str, fps: int, output: str, no_video: bool):
-    """Start a capture session for a task."""
+@click.option('--no-depth', is_flag=True, help='Force sensor-blind mode (webcam only, no depth)')
+def capture(task_name: str, camera: str, fps: int, output: str, no_video: bool, no_depth: bool):
+    """Start a capture session for a task.
+
+    Use --webcam or --no-depth for mobile devices without depth cameras.
+    """
     from .cameras import CameraType
     from .capture import TaskCapture, CaptureConfig
-    
+
     # Map camera choice to type
     camera_map = {
         'oak-d-s2': CameraType.OAK_D_S2,
         'oak-d-pro': CameraType.OAK_D_PRO,
         'realsense-d455': CameraType.REALSENSE_D455,
+        'webcam': CameraType.WEBCAM,
         'auto': None
     }
-    camera_type = camera_map[camera]
-    
+
+    # Force webcam if --no-depth specified
+    if no_depth:
+        camera_type = CameraType.WEBCAM
+    else:
+        camera_type = camera_map[camera]
+
     config = CaptureConfig(
         fps=fps,
-        save_video=not no_video
+        save_video=not no_video,
+        # Disable depth saving in sensor-blind mode
+        save_depth_raw=camera_type != CameraType.WEBCAM,
+        save_depth_viz=camera_type != CameraType.WEBCAM,
     )
-    
+
     capture_session = TaskCapture(
         task_name=task_name,
         output_base=Path(output),

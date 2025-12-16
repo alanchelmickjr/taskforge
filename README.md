@@ -22,6 +22,28 @@ A CLI tool that captures you doing a task (video + audio + depth) and outputs a 
 | **Jetson Orin Nano** | 8GB | Supported | Auto-tuned for shared memory |
 | Jetson Orin NX | 8-16GB | Supported | Better headroom for processing |
 | Jetson AGX Orin | 32-64GB | Supported | Full desktop performance |
+| **Mobile/Basic (sensor-blind)** | Any | Supported | Webcam only, no depth data |
+
+### Sensor-Blind Mode
+
+Don't have a depth camera? TaskForge works with any USB webcam in "sensor-blind" mode:
+
+```bash
+# Explicitly use webcam (no depth)
+taskforge capture "my task" --camera webcam
+
+# Or use --no-depth flag
+taskforge capture "my task" --no-depth
+
+# Auto-detect falls back to webcam if no depth camera found
+taskforge capture "my task"
+```
+
+In sensor-blind mode:
+- RGB video recording works normally
+- Audio narration is captured
+- Playbooks are generated without depth information
+- Perfect for mobile devices, laptops, or any basic setup
 
 ## Install
 
