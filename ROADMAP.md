@@ -247,18 +247,26 @@ function calculateEnergyMatch(task: Task, currentEnergy: EnergyLevel): number {
 - [x] memoRable salience scoring system
 - [x] Project Triage v1.0 (local storage)
 
-### Phase 2: Integration Bridge (Next)
-- [ ] **Project Triage → memoRable connection**
-  - Add `httpx` or `fetch` calls to retrieve related playbooks
+### Phase 2: Integration Bridge (In Progress)
+- [x] **Energy-aware retrieval in memoRable** ✓
+  - Added `energy_aware_tasks.ts` with time-of-day detection
+  - Implements energy match scoring (effort × excitement × impact)
+  - Final score = Spirit (40%) + Energy Match (60%)
+  - Branch: `claude/energy-aware-tasks` in memoRable
+
+- [x] **TaskForge Triage UI (was: Project Triage)** ✓
+  - Added `/api/tasks/energy` endpoint
+  - Added "⚡ Energy" sort button
+  - Shows energy suggestions banner
+  - Rebranded as "TaskForge Triage"
+  - Branch: `claude/taskforge-integration` in project-triage-app
+
+- [ ] **Project Triage → memoRable playbook connection**
+  - Add `fetch` calls to retrieve related playbooks
   - Display playbook suggestions on Horse cards
   - "View playbook" link to TaskForge output
 
-- [ ] **Energy-aware retrieval in memoRable**
-  - Add `energyContext` parameter to retrieve endpoint
-  - Implement time-of-day energy defaults
-  - Weight results by energy match
-
-- [ ] **Project Triage mobile enhancements**
+- [ ] **Mobile enhancements**
   - PWA manifest + service worker
   - Touch-optimized bucket drag-drop
   - Offline queue for changes
