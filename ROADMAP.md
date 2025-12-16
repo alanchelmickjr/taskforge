@@ -41,13 +41,54 @@
 
 ---
 
-## Repository Map
+## Repository Map (Consolidated)
 
-| Repo | Purpose | Tech Stack | Status |
-|------|---------|------------|--------|
-| **taskforge** | Capture demonstrations → playbooks | Python, Click, OpenCV, Whisper | v0.1 |
-| **memoRable** | Salient memory storage/retrieval | TypeScript, Node, OpenAI | Branch: `claude/memory-salience-system` |
-| **project-triage-app** | UI for project prioritization | Next.js 14, React, Tailwind | v1.0 |
+| Repo | New Name | Purpose | Tech Stack | Status |
+|------|----------|---------|------------|--------|
+| **taskforge** | TaskForge CLI | Capture demonstrations → playbooks | Python, Click, OpenCV, Whisper | v0.1 ✓ |
+| **memoRable** | TaskForge Memory | Salience scoring, energy-awareness, patterns | TypeScript, Node, MongoDB | main ✓ |
+| **project-triage-app** | **TaskForge Web** | Priority UI + timelines + sharing | Next.js 14, React, Tailwind | v1.0 → v2.0 |
+
+### Consolidation Strategy
+
+**Don't merge repos. Rebrand + integrate tightly.**
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                         TASKFORGE BRAND                                 │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  taskforge (CLI)     "taskforge capture 'wire motor'"                  │
+│       ↓ stores playbooks                                               │
+│  memoRable           Already has: time-of-day, patterns, salience      │
+│       ↓ serves tasks + energy matching                                 │
+│  taskforge-web       Rebrand project-triage → add memoRable backend    │
+│       ↓ optional                                                       │
+│  Gun.js P2P          Team sharing (future)                             │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### What memoRable Already Provides
+
+| Feature | Status | Location |
+|---------|--------|----------|
+| Time-of-day detection | ✅ Built | `anticipation_service.ts:getTimeOfDay()` |
+| Pattern learning (21-day) | ✅ Built | `anticipation_service.ts:calculatePatternConfidence()` |
+| Salience scoring (5-factor) | ✅ Built | `salience_calculator.ts` |
+| Open loops (you owe/they owe) | ✅ Built | `open_loop_tracker.ts` |
+| Briefings for contacts/tasks | ✅ Built | `briefing_generator.ts` |
+| Retrieval with context | ✅ Built | `retrieval.ts` |
+
+### What Needs Building
+
+| Feature | Where | Effort |
+|---------|-------|--------|
+| Energy-aware task API endpoint | memoRable | Small |
+| Connect Project Triage to memoRable | project-triage-app | Medium |
+| Duration estimates + tracking | Both | Medium |
+| Rename project-triage → taskforge-web | project-triage-app | Small |
+| Team/sharing via Gun.js | taskforge-web | Large |
 
 ---
 
@@ -254,15 +295,14 @@ function calculateEnergyMatch(task: Task, currentEnergy: EnergyLevel): number {
 
 ## Quick Start: Running All Three
 
-### 1. Start memoRable Salience Service
+### 1. Start memoRable (TaskForge Memory)
 ```bash
 cd /path/to/memoRable
-git checkout claude/memory-salience-system-kh8G7
 npm install
 npm run dev  # Runs on :3100
 ```
 
-### 2. Start Project Triage
+### 2. Start TaskForge Web (was: Project Triage)
 ```bash
 cd /path/to/project-triage-app
 npm install
